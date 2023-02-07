@@ -13,6 +13,9 @@ static nus_t nus;
 static uint8_t allowedToConnect = 0;
 char receivedString[1024];
 uint16_t serialRecLen = 0;
+uint16_t testVar = 0;
+
+SemaphoreHandle_t distanceVarMutex;
 
 static void notifyCallback(
     BLERemoteCharacteristic *pBLERemoteCharacteristic,
@@ -150,9 +153,20 @@ void process_serial(char * pDataString, uint16_t len)
     Serial.println("PONG");
   }
 
-  if (strncmp((char *)receivedString, "VAR", 4) == 0) // set variable to selected value
+  if (strncmp((char *)receivedString, "VAR ", 4) == 0) // set variable to selected value
   {
-    Serial.println("PONG");
+    char varStr[10];
+    strcpy(varStr, receivedString + 4);
+    xSemaphoreTake(distanceVarMutex,portMAX_DELAY);
+    testVar = strtol(varStr,NULL, 10);
+    xSemaphoreGive(distanceVarMutex);
+    Serial.printf("Var is %d\r\n",testVar);
+  }
+
+  if (strncmp((char *)receivedString, "TARGET", 7) == 0)
+  {
+    Serial.println("Setting target name to:");
+    
   }
 
 
@@ -163,6 +177,8 @@ void setup()
   Serial.begin(115200);
   Serial.println("Starting Arduino BLE Client application...");
   BLEDevice::init("");
+
+  distanceVarMutex = xSemaphoreCreateMutex();
 
   // Retrieve a Scanner and set the callback we want to use to be informed when we
   // have detected a new device.  Specify that we want active scanning and start the
