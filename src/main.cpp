@@ -32,6 +32,7 @@ static void notifyCallback(
   Serial.println();
 }
 
+//Funkcija za lovljenje dogodkov na BLE povezavi
 class MyClientCallback : public BLEClientCallbacks
 {
   void onConnect(BLEClient *pclient)
@@ -46,7 +47,7 @@ class MyClientCallback : public BLEClientCallbacks
     BLEDevice::getScan()->start(0);
   }
 };
-
+// Funkcija za lovljenje dogodkov na TX značilosti in sprejem podatkov.
 static void nusTxNotifyCallback(BLERemoteCharacteristic *pBLERemoteCharacteristic,
                                 uint8_t *pData,
                                 size_t length,
@@ -64,48 +65,49 @@ static void nusTxNotifyCallback(BLERemoteCharacteristic *pBLERemoteCharacteristi
   }
 }
 
+// Funkcija za vzpostavljanje povezave z BLE strežnikom
 bool connectToServer()
 {
   Serial.print("Forming a connection to ");
   Serial.println(myDevice->getAddress().toString().c_str());
 
-  BLEClient *pClient = BLEDevice::createClient();
+  BLEClient *pClient = BLEDevice::createClient(); // Ustvarimo kazalec na spremenljivko tipa BLEClient
   Serial.println(" - Created client");
 
-  pClient->setClientCallbacks(new MyClientCallback());
+  pClient->setClientCallbacks(new MyClientCallback()); // Dodelimo funkcijo za lovljenje dogodkov BLE povezave s strežnikom
 
-  // Connect to the remove BLE Server.
-  pClient->connect(myDevice); // if you pass BLEAdvertisedDevice instead of address, it will be recognized type of peer device address (public or private)
+  // Povežimo se na BLE strežnik
+  pClient->connect(myDevice);
   Serial.println(" - Connected to server");
-  pClient->setMTU(517); // set client to request maximum MTU from server (default is 23 otherwise)
+  pClient->setMTU(517); // Nastavi maksimalno velikost paketa
 
-  // Obtain a reference to the service we are after in the remote BLE server.
+  // Poizvedi če na BLE strežniku obstaja NUS storitev
   pNusService = pClient->getService(NRF_NUS);
   if (pNusService == nullptr)
   {
     Serial.print("Failed to find our service UUID: ");
     Serial.println(NRF_NUS.toString().c_str());
-    pClient->disconnect();
+    pClient->disconnect(); // Če storitve ni, naj prekine povezavo
     return false;
   }
   Serial.println(" - Found our service");
 
-  // Obtain a reference to the characteristic in the service of the remote BLE server.
+  // Poišči značilnosti v naši storitvi RX
   nus.pNusRXCharacteristic = pNusService->getCharacteristic(NRF_NUS_RX_CHAR);
   if (nus.pNusRXCharacteristic == nullptr)
   {
     Serial.print("Failed to find our characteristic UUID: ");
     Serial.println(NRF_NUS_RX_CHAR.toString().c_str());
-    pClient->disconnect();
+    pClient->disconnect(); // Če značilnosti ni, naj prekine povezavo
     return false;
   }
-
+  // Poišči značilnosti v naši storitvi TX
   nus.pNusTXCharacteristic = pNusService->getCharacteristic(NRF_NUS_TX_CHAR);
   if (nus.pNusTXCharacteristic == nullptr)
   {
     Serial.print("Failed to find our characteristic UUID: ");
     Serial.println(NRF_NUS_TX_CHAR.toString().c_str());
-    pClient->disconnect();
+    pClient->disconnect(); // Če značilnosti ni, naj prekine povezavo
     return false;
   }
   Serial.println(" - Found our characteristics");
@@ -114,12 +116,11 @@ bool connectToServer()
   {
     nus.pNusTXCharacteristic->registerForNotify(nusTxNotifyCallback);
   }
-  connected = true;
+  connected = true; // Povezava uspešno vzpostavljena
   return true;
 }
-/**
- * Scan for BLE servers and find the first one that advertises the service we are looking for.
- */
+
+// Funkcija vrne dogodke iz skenerja BLE naprav
 class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
 {
   /**
@@ -130,20 +131,19 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
     Serial.print("BLE Advertised Device found: ");
     Serial.println(advertisedDevice.toString().c_str());
 
-    // We have found a device, let us now see if it contains the service we are looking for.
+    // Če je ime najdene BLE naprave enako imenu iskane naprave, vzpostavi povezavo
     if (advertisedDevice.getName().c_str() == TARGET_NAME)
     {
-
       BLEDevice::getScan()->stop();
       myDevice = new BLEAdvertisedDevice(advertisedDevice);
       doConnect = true;
       doScan = true;
+    }
+  }
+};
 
-    } // Found our server
-  }   // onResult
-};    // MyAdvertisedDeviceCallbacks
-
-void process_serial(char * pDataString, uint16_t len)
+// Obdelava serijskih komand
+void process_serial(char *pDataString, uint16_t len)
 {
   char responseString[100];
   memset(responseString, 100, 0);
@@ -157,34 +157,29 @@ void process_serial(char * pDataString, uint16_t len)
   {
     char varStr[10];
     strcpy(varStr, receivedString + 4);
-    xSemaphoreTake(distanceVarMutex,portMAX_DELAY);
-    testVar = strtol(varStr,NULL, 10);
+    xSemaphoreTake(distanceVarMutex, portMAX_DELAY);
+    testVar = strtol(varStr, NULL, 10);
     xSemaphoreGive(distanceVarMutex);
-    Serial.printf("Var is %d\r\n",testVar);
+    Serial.printf("Var is %d\r\n", testVar);
   }
 
   if (strncmp((char *)receivedString, "TARGET", 7) == 0)
   {
     Serial.println("Setting target name to:");
-    
   }
-
-
 }
 
 void setup()
 {
   Serial.begin(115200);
   Serial.println("Starting Arduino BLE Client application...");
-  BLEDevice::init("");
+  BLEDevice::init(""); // Inicializiraj BLE
 
   distanceVarMutex = xSemaphoreCreateMutex();
 
-  // Retrieve a Scanner and set the callback we want to use to be informed when we
-  // have detected a new device.  Specify that we want active scanning and start the
-  // scan to run for 5 seconds.
+  // Nastavi skeniranje za BLE napravami
   BLEScan *pBLEScan = BLEDevice::getScan();
-  pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
+  pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks()); // Nastavi lovljenje dogodkov za skeniranje
   pBLEScan->setInterval(1349);
   pBLEScan->setWindow(449);
   pBLEScan->setActiveScan(true);
@@ -220,6 +215,7 @@ void loop()
     BLEDevice::getScan()->start(0); // this is just example to start scan after disconnect, most likely there is better way to do it in arduino
   }
 
+  // Glej serijski vhod za komande
   while (Serial.available())
   {
     receivedString[serialRecLen] = (char)Serial.read();
