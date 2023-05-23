@@ -7,13 +7,19 @@
 static boolean doConnect = false;
 static boolean connected = false;
 static boolean doScan = false;
+static boolean scanCompleted = false;
+static boolean tryToPing = false;
 static BLEAdvertisedDevice *myDevice;
 BLERemoteService *pNusService;
+BLEScan *pBLEScan;
 static nus_t nus;
 static uint8_t allowedToConnect = 0;
 char receivedString[1024];
 uint16_t serialRecLen = 0;
 uint16_t testVar = 0;
+uint32_t currMillis, prevMillis;
+const uint8_t notificationOff[] = {0x0, 0x0};
+const uint8_t notificationOn[] = {0x1, 0x0};
 
 SemaphoreHandle_t distanceVarMutex;
 
@@ -32,7 +38,7 @@ static void notifyCallback(
   Serial.println();
 }
 
-//Funkcija za lovljenje dogodkov na BLE povezavi
+// Funkcija za lovljenje dogodkov na BLE povezavi
 class MyClientCallback : public BLEClientCallbacks
 {
   void onConnect(BLEClient *pclient)
@@ -44,7 +50,7 @@ class MyClientCallback : public BLEClientCallbacks
   {
     connected = false;
     Serial.println("Disconnected!");
-    BLEDevice::getScan()->start(0);
+    tryToPing = false;
   }
 };
 // Funkcija za lovljenje dogodkov na TX značilosti in sprejem podatkov.
@@ -115,6 +121,7 @@ bool connectToServer()
   if (nus.pNusTXCharacteristic->canNotify())
   {
     nus.pNusTXCharacteristic->registerForNotify(nusTxNotifyCallback);
+    Serial.println("Can notify activated, trying to register notify");
   }
   connected = true; // Povezava uspešno vzpostavljena
   return true;
@@ -132,8 +139,9 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
     Serial.println(advertisedDevice.toString().c_str());
 
     // Če je ime najdene BLE naprave enako imenu iskane naprave, vzpostavi povezavo
-    if (advertisedDevice.getName().c_str() == TARGET_NAME)
+    if (strncmp(advertisedDevice.getName().c_str(), TARGET_NAME, strlen(TARGET_NAME)) == 0)
     {
+      Serial.println("Found correct device, starting to connect");
       BLEDevice::getScan()->stop();
       myDevice = new BLEAdvertisedDevice(advertisedDevice);
       doConnect = true;
@@ -178,12 +186,12 @@ void setup()
   distanceVarMutex = xSemaphoreCreateMutex();
 
   // Nastavi skeniranje za BLE napravami
-  BLEScan *pBLEScan = BLEDevice::getScan();
+  pBLEScan = BLEDevice::getScan();
   pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks()); // Nastavi lovljenje dogodkov za skeniranje
   pBLEScan->setInterval(1349);
   pBLEScan->setWindow(449);
   pBLEScan->setActiveScan(true);
-  pBLEScan->start(5, false);
+  pBLEScan->start(500, false);
 } // End of setup.
 
 // This is the Arduino main loop function.
@@ -206,6 +214,7 @@ void loop()
   // with the current time since boot.
   if (connected)
   {
+    tryToPing = true;
     // Set the characteristic's value to be the array of bytes that is actually a string.
     // pRemoteCharacteristic->writeValue(newValue.c_str(), newValue.length());
     // process_Connected
@@ -234,4 +243,24 @@ void loop()
       }
     }
   }
+
+  if (currMillis - prevMillis > 5000)
+  {
+    if (scanCompleted && connected == 0)
+    {
+      Serial.println("Havent found device in this scan, starting again!");
+    }
+
+    if (tryToPing)
+    {
+      Serial.println("Pinging");
+      char buf[20];
+      sprintf(buf, "PING\r\n");
+      nus.pNusRXCharacteristic->writeValue(buf, false);
+    }
+    prevMillis = currMillis;
+    Serial.println("Timer tripped");
+  }
+
+  currMillis = millis();
 }
